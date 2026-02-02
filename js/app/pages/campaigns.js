@@ -3,14 +3,16 @@ export const campaigns = {
         return {
             parent: "",
             details:{},
-            data: { items: [] },
+            data: {},
             date:"",
             date2:"",
             q:"",
             sort:"",
             loader: 1,
+            iChart:-1,
             id:0,
-            type:0
+            type:0,
+            all:true,
         };
     },
     mounted: function () {
@@ -20,7 +22,9 @@ export const campaigns = {
             this.parent.logout();
         }
         this.get();
+        
         this.GetFirstAndLastDate();
+
     },
     methods: {
         GetFirstAndLastDate:function(){
@@ -35,10 +39,11 @@ export const campaigns = {
         get:function(){
             var self=this;
             var data = self.parent.toFormData(self.parent.formData);
-            /*
+            
             if(this.date!="") data.append('date',this.date);
             if(this.date2!="") data.append('date2',this.date2);
-            */
+            
+            if(self.iChart!=-1) self.line(self.data.items[self.iChart]);
             self.loader=1;
             axios.post(this.parent.url+"/site/getCampaigns?auth="+this.parent.user.auth, data).then(function(response){
                 self.data = response.data;
@@ -47,6 +52,32 @@ export const campaigns = {
                 self.parent.logout();
             });
         },
+        getCampaignChart:function(){
+            var self=this;
+            var data = self.parent.toFormData(self.parent.formData);
+            
+            if(this.date!="") data.append('date',this.date);
+            if(this.date2!="") data.append('date2',this.date2);
+            if(this.q!="") data.append('q',this.q);
+            if(this.sort!="") data.append('sort',this.sort);
+
+            self.loader=1;
+            axios.post(this.parent.url+"/site/getCampaignChart?auth="+this.parent.user.auth, data).then(function(response){
+
+                self.parent.formData.views=response.data.items.views;
+                self.parent.formData.clicks=response.data.items.clicks;
+                self.parent.formData.line=response.data.items.line;
+                self.parent.formData.sites=response.data.items.sites;
+
+                self.line(response.data.items);
+                
+                self.loader = 0;
+            }).catch(function(error){
+                console.log(error);
+                self.parent.logout();
+            });
+        },
+        
         action:function(){
             var self=this;
             self.parent.formData.copy="";
@@ -54,7 +85,9 @@ export const campaigns = {
 
             axios.post(this.parent.url+"/site/actionCampaign?auth="+this.parent.user.auth, data).then(function(response){
                 self.$refs.new.active=0;
-                if(self.parent.formData.id){
+                if(response.data.error){
+                    self.$refs.header.$refs.msg.alertFun(response.data.error);
+                } else if(self.parent.formData.id){
                     self.$refs.header.$refs.msg.successFun("Successfully updated campaign!");
                 }
                 else{
@@ -83,6 +116,110 @@ export const campaigns = {
                     console.log('errors: ', error);
                 });
             }
+        },
+        line: function(item){
+            setTimeout(function(){
+                let dates = [];
+                let clicks = [];
+                let views = [];
+                let leads = [];
+                if(item && item['line']){
+                    for(let i in item['line']){
+                        console.log("Дані: ", item['line'][i]);
+                        dates.push(i);
+                        clicks.push(item['line'][i].clicks);
+                        views.push(item['line'][i].views);
+                        leads.push(item['line'][i].leads);
+                    }
+                }
+
+                document.getElementById('chartOuter').innerHTML =
+                `
+                    <div id="chartHints">
+                        <div class="chartHintsViews">Views</div>
+                        <div class="chartHintsClicks">Clicks</div>
+                    </div>
+                    <canvas id="myChart"></canvas>
+                `
+                const ctx = document.getElementById('myChart');
+                const xScaleImage ={
+                    id:'xScaleImage',
+                    afterDatasetsDraw(chart, args, plugins){
+                        const {ctx, data, chartArea:{bottom}, scales:{x}} = chart;
+                        ctx.save();
+                        data.images.forEach((image, index) => {
+                            const label = new Image();
+                            label.src=image;
+
+                            const width = 120;
+                            ctx.drawImage(label, x.getPixelForValue(index)-(width/2), x.top, width, width);
+
+                        });
+                    }
+                }
+
+                new Chart(ctx, {
+                    type:'line',
+                    data:{
+                        labels: dates,
+                        datasets:[
+                            {
+                                label:"Clicks",
+                                backgroundColor:"#00599D",
+                                borderColor:"#00599D",
+                                data: clicks
+                            },
+                            {
+                                label:"Views",
+                                backgroundColor:"#5000B8",
+                                borderColor:"#5000B8",
+                                data: views,
+                                yAxisID: 'y2'
+                            },
+                        ]
+                    },
+                    options:{
+                        responsive:true,
+                        plugins:{
+                            tooltip:{
+                                bodyFontSize:20,
+                                usePointStyle:true,
+                                callbacks:{
+                                    title:(ctx)=>{
+                                        return ctx[0]['dataset'].label
+                                    },
+                                }
+                            },
+                            legend:{
+                                display:false
+                            }
+                        },
+                        categoryPercentage:0.2,
+                        barPercentage:0.8,
+                        scales:{
+                            y:{
+                                id:'y2',
+                                position:'right'
+                            },
+                            x:{
+                                afterFit: (scale)=>{
+                                    scale.height=120;
+                                }
+                            }
+                        }
+                    },
+
+                })
+            },500);
+        },
+        checkAll:function(prop){
+            if(this.data.items[this.iChart].sites){
+                for(let i in this.data.items[this.iChart].sites){
+                    this.data.items[this.iChart].sites[i].include=prop;
+                }
+            }
+            this.parent.formData=this.data.items[this.iChart];
+            this.get();
         }
     },
     template: `
@@ -105,6 +242,61 @@ export const campaigns = {
                         <a class="btnS" href="#" @click.prevent="parent.formData={};$refs.new.active=1"><i class="fas fa-plus"></i>  New </a>
                     </div>
                 </div>
+
+                <popup ref="chart" fullscreen="true" title="Chart">
+                    <div class="flex panel">
+                        <div class="w30 ptb25">
+                            <input type="date" v-model="date" @change="getCampaignChart();" /> – <input type="date" v-model="date2" @change="getCampaignChart();" />
+                        </div>
+
+                        <div class="w70 al">
+                            <div class="flex cubes">
+                                <div class="w30 clicks">
+                                    <div>Clicks</div>
+                                    {{data.items[iChart].clicks}}
+                                </div>
+                                
+                                <div class="w30 views">
+                                    <div>Views</div>
+                                    {{data.items[iChart].views}}
+                                </div>
+                                
+                                <div class="w30 leads">
+                                    <div>Leads</div>
+                                    {{data.items[iChart].leads}}
+                                </div>
+                                
+                                <div class="w30 ctr">
+                                    <div>CTR</div>
+                                    {{((data.items[iChart].clicks * 100 / data.items[iChart].views).toFixed(2))}} %
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex body">
+                        <div class="w30 ar filchart">
+                            <div class="itemchart ptb10" v-if="all">
+                                <toogle v-model="all" @update:modelValue="all = $event; checkAll($event)" />
+                                All
+                            </div>
+                            
+                            <div class="itemchart ptb10" v-if="data.items[iChart].sites" v-for="s in data.items[iChart].sites">
+                                <toogle v-model="s.include" @update:modelValue="s.include = $event; parent.formData = data.items[iChart]; getCampaignChart()" />
+                                {{s.site}}
+                            </div>
+                        </div>
+
+                        <div class="w70" id="chartOuter">
+                            <div id="chartHints">
+                                <div class="chartHintsViews">Views</div>
+                                <div class="chartHintsClicks">Clicks</div>
+                            </div>
+                            <canvas id="myChart"></canvas>
+                        </div>
+                    </div>
+                </popup>
+
                 <popup ref="new" :title="(parent.formData && parent.formData.id) ? 'Edit campaign' : 'New campaign'">
                     <div class="form inner-form">
                         <form @submit.prevent="action()" v-if="parent.formData">
@@ -120,6 +312,7 @@ export const campaigns = {
                         </form>
                     </div>
                 </popup>
+
                 <div class="table" v-if="data.items!=''">
                     <table>
                         <thead>
@@ -167,6 +360,12 @@ export const campaigns = {
                                     </a>
                                 </td>
                                 <td class="actions">
+                                    <router-link :to="'/campaign/'+item.id">
+                                        <i class="fas fa-edit"></i>
+                                    </router-link>
+                                    <a href="#" @click.prevent="parent.formData = item; iChart=i; $refs.chart.active=1; getCampaignChart(iChart)">
+                                        <i class="fas fa-chart-bar"></i>
+                                    </a>
                                     <a href="#" @click.prevent="parent.formData = item; del();">
                                         <i class="fas fa-trash-alt"></i>
                                     </a>
