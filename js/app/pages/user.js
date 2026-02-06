@@ -110,7 +110,7 @@ export const user = {
                     self.$refs.header.$refs.msg.alertFun(response.data.error);
                     return false;
                 } else {
-                    //.$refs.payment.active=0;
+                    //self.$refs.payment.active=0;
                 }
 
                 if (self.parent.formData.id) {

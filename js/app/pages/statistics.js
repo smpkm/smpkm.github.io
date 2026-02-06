@@ -70,6 +70,7 @@ export const statistics = {
                 self.$refs.header.$refs.msg.alertFun(response.data.error);
                 return false;
                 } else {
+                // self.$refs.payment.active = 0;
                 if (self.parent.formData.id) {
                     self.$refs.header.$refs.msg.successFun("Successfully updated banner!");
                 } else {
